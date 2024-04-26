@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { io } from "socket.io-client";
+import { io, Socket } from "socket.io-client";
+
 type User = {
   id: number;
   firstName: string;
@@ -23,19 +24,21 @@ type Message = {
 };
 
 const App = () => {
-  const [socket, setSocket] = useState(null);
-  const [roomName, setRoomName] = useState(null);
-  const [userName, setUserName] = useState("");
-  const [message, setMessage] = useState("");
+  const [jwt, setJwt] = useState<string>("");
+  const [user, setUser] = useState<User | null>(null);
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [roomName, setRoomName] = useState<string>("");
+  const [message, setMessage] = useState<string>("");
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isTyping, setIsTyping] = useState(false);
-  const [typingMessage, setTypingMessage] = useState("");
-  const [file, setFile] = useState(null);
+  const [isTyping, setIsTyping] = useState<boolean>(false);
+  const [typingMessage, setTypingMessage] = useState<string>("");
+  const [file, setFile] = useState<File | null>(null);
 
-  const fetchChatHistory = async (roomId) => {
+  // Fetch chat history from the server
+  const fetchChatHistory = async (roomId: number) => {
     try {
       const response = await fetch(
-        `http://localhost:3000/chat/chat-history/${roomId}`
+          `http://localhost:3000/chat/chat-history/${roomId}`
       );
       const data = await response.json();
       console.log("Chat history:", data);
@@ -46,62 +49,33 @@ const App = () => {
     }
   };
 
-  useEffect(() => {
-    const authToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZW1haWwiOiJhbmRyeXNhdGtvQGdtYWlsLmNvbSIsImZpcnN0TmFtZSI6IkFuZHJpaSIsInJvbGUiOiJVU0VSIiwiaWF0IjoxNzE0MTQ4ODI5LCJleHAiOjE3MTQxNTI0Mjl9.t6F8OSQqF1Z--X617nidCWhdRL-0ONR2tVYINDuDZVI';
-    const newSocket = io("http://localhost:8001",{extraHeaders: {Authorization: `Bearer ${authToken}`}});
-    setSocket(newSocket);
-
-    newSocket.on("chat", (data) => {
-      console.log(data);
-      setMessages((prevMessages) => [...prevMessages, data]);
-    });
-
-    newSocket.on("typing", (data) => {
-      if (data.isTyping) {
-        setTypingMessage(`${data.user.userName} is typing...`);
-      } else {
-        setTypingMessage("");
-      }
-    });
-
-    newSocket.on("file", (data: Message & { fileName: string }) => {
-      setMessages((prevMessages) => [...prevMessages, data]);
-    });
-
-    return () => {
-      newSocket.disconnect();
-    };
-  }, []);
-
+  // Join a chat room
   const joinRoom = () => {
-    if (socket && roomName && userName) {
-      const user = { socketId: socket.id, userId: 2, userName };
-      socket.emit("joinRoom", { roomName, user });
+    if (socket && roomName && user) {
+      const userPayload = { socketId: socket.id, userId: user.id, userName: user.firstName };
+      socket.emit("joinRoom", { roomName, user: userPayload });
       setMessages([]);
       const fetchHistory = async () => {
         try {
-          if (roomName) {
-            const history = await fetchChatHistory(roomName);
-            setMessages(history);
-          }
+          const history = await fetchChatHistory(parseInt(roomName));
+          setMessages(history);
         } catch (e) {
           console.log(e);
         }
       };
-
       fetchHistory();
     }
   };
 
+  // Send a message to the chat room
   const sendMessage = () => {
-    if (socket && roomName && userName && message) {
-      const user = { socketId: socket.id, userId: 2, userName };
+    if (socket && roomName && user && message) {
+      const userPayload = { socketId: socket.id, userId: user.id, userName: user.firstName };
       const payload = {
-        eventName: "chat",
         message,
         roomName,
         timeSent: Date.now(),
-        user,
+        user: userPayload,
       };
       socket.emit("chat", payload);
       setMessage("");
@@ -109,13 +83,14 @@ const App = () => {
     }
   };
 
+  // Upload a file to the chat room
   const handleFileUpload = () => {
-    if (socket && roomName && userName && file) {
-      const user = { socketId: socket.id, userId: 2, userName };
+    if (socket && roomName && user && file) {
+      const userPayload = { socketId: socket.id, userId: user.id, userName: user.firstName };
       const filePayload = {
         roomName,
-        user,
-        file: file,
+        user: userPayload,
+        file,
         fileName: file.name,
         fileType: file.type,
       };
@@ -123,85 +98,144 @@ const App = () => {
     }
   };
 
+  // Send a typing event to the chat room
   const handleTyping = () => {
-    if (socket && roomName && userName) {
-      const user = { socketId: socket.id, userId: 2, userName };
-      const payload = { roomName, user, isTyping: true };
+    if (socket && roomName && user) {
+      const userPayload = { socketId: socket.id, userId: user.id, userName: user.firstName };
+      const payload = { roomName, user: userPayload, isTyping: true };
       socket.emit("typing", payload);
       setIsTyping(true);
     }
   };
 
+  // Stop sending typing events to the chat room
   const handleStopTyping = () => {
-    if (socket && roomName && userName) {
-      const user = { socketId: socket.id, userId: 2, userName };
-      const payload = { roomName, user, isTyping: false };
+    if (socket && roomName && user) {
+      const userPayload = { socketId: socket.id, userId: user.id, userName: user.firstName };
+      const payload = { roomName, user: userPayload, isTyping: false };
       socket.emit("typing", payload);
       setIsTyping(false);
     }
   };
 
+  // Sign in the user and retrieve user data
+  const handleSignIn = async () => {
+    const result = await fetch("http://localhost:3000/user/personal-data", {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    if (!result.ok) {
+      return;
+    }
+    const data = await result.json();
+    console.log(data);
+    setUser(data);
+  };
+
+  // Set up the socket connection and event listeners
+  useEffect(() => {
+    if (user) {
+      const newSocket = io("http://localhost:8001", { query: { token: `Bearer ${jwt}` } });
+      setSocket(newSocket);
+      console.log("Socket:", newSocket);
+      console.log("User:", user);
+
+      newSocket.on("chat", (data) => {
+        console.log(data);
+        setMessages((prevMessages) => [...prevMessages, data]);
+      });
+
+      newSocket.on("typing", (data) => {
+        if (data.isTyping) {
+          setTypingMessage(`${data.user.userName} is typing...`);
+        } else {
+          setTypingMessage("");
+        }
+      });
+
+      newSocket.on("file", (data) => {
+        setMessages((prevMessages) => [...prevMessages, data]);
+      });
+
+      return () => {
+        newSocket.disconnect();
+      };
+    }
+  }, [user, jwt]);
+
   return (
-    <div>
-      <h1>Chat Room</h1>
       <div>
-        <input
-          type="text"
-          placeholder="Room Name"
-          value={roomName}
-          onChange={(e) => setRoomName(e.target.value)}
-        />
-        <input
-          type="text"
-          placeholder="User Name"
-          value={userName}
-          onChange={(e) => setUserName(e.target.value)}
-        />
-        <button onClick={joinRoom}>Join Room</button>
-      </div>
-      <div>
-        <input
-          type="text"
-          placeholder="Message"
-          value={message}
-          onChange={(e) => {
-            setMessage(e.target.value);
-            handleTyping();
-          }}
-          onBlur={handleStopTyping}
-        />
-        <button onClick={sendMessage}>Send Message</button>
-        <input type="file" onChange={(e) => setFile(e.target.files[0])} />
-        <button onClick={handleFileUpload}>Upload File</button>
-      </div>
-      <div>
-        <h2>Messages</h2>
-        {messages.map((msg, index) => {
-        const sender = msg.senderId === msg.Admin.id ? msg.Admin : msg.Client;
-          return (
-            <div key={index}>
-              <p>
-                {sender.firstName}:
-              </p>
-              {msg.fileName && !msg.text ? (
-                <div>
-                  <p>{sender.firstName} shared the file : </p>
-                  <img
-                    src={"http://localhost:3000/static/" + msg.fileName}
-                    alt={msg.fileName}
-                    width="100%"
-                    height="300"
-                  />
-                </div>
-              ) : (
-                msg.text
-              )}
+        {/* Login form */}
+        {!user && (
+            <div>
+              <input
+                  type="text"
+                  placeholder="JWT Token"
+                  value={jwt}
+                  onChange={(e) => setJwt(e.target.value)}
+              />
+              <button onClick={handleSignIn}>Login</button>
             </div>
-          );
-        })}
-        {typingMessage && <div>{typingMessage}</div>}
+        )}
+
+        {/* Chat room */}
+        {user && (
+            <div>
+              <h1>Chat Room</h1>
+              <div>
+                <input
+                    type="text"
+                    placeholder="Room Name"
+                    value={roomName}
+                    onChange={(e) => setRoomName(e.target.value)}
+                />
+                <button onClick={joinRoom}>Join Room</button>
+              </div>
+              <div>
+                <input
+                    type="text"
+                    placeholder="Message"
+                    value={message}
+                    onChange={(e) => {
+                      setMessage(e.target.value);
+                      handleTyping();
+                    }}
+                    onBlur={handleStopTyping}
+                />
+                <button onClick={sendMessage}>Send Message</button>
+                <input
+                    type="file"
+                    onChange={(e) => setFile(e.target.files ? e.target.files[0] : null)}
+                />
+                <button onClick={handleFileUpload}>Upload File</button>
+              </div>
+              <div>
+                <h2>Messages</h2>
+                {messages.map((msg, index) => {
+                  const sender = msg.senderId === msg.Admin.id ? msg.Admin : msg.Client;
+                  return (
+                      <div key={index}>
+                        <p>{sender.firstName}:</p>
+                        {msg.fileName && !msg.text ? (
+                            <div>
+                              <p>{sender.firstName} shared the file : </p>
+                              <img
+                                  src={`http://localhost:3000/static/${msg.fileName}`}
+                                  alt={msg.fileName}
+                                  width="100%"
+                                  height="300"
+                              />
+                            </div>
+                        ) : (
+                            msg.text
+                        )}
+                      </div>
+                  );
+                })}
+                {typingMessage && <div>{typingMessage}</div>}
+              </div>
+            </div>
+        )}
       </div>
-    </div>
   );
 };
 

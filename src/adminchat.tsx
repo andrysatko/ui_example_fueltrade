@@ -24,16 +24,19 @@ type Message = {
 
 const App = () => {
   const [socket, setSocket] = useState(null);
+
   const [roomName, setRoomName] = useState(null);
-  const [User, setUser] = useState<User| null>(null);
+
+  const [User, setUser] = useState<User | null>(null);
+  
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [typingMessage, setTypingMessage] = useState("");
   const [file, setFile] = useState(null);
-  const [authorization, setAuthorization] = useState('');
+  const [authorization, setAuthorization] = useState("");
 
-  const fetchChatHistory = async (roomId:any) => {
+  const fetchChatHistory = async (roomId: any) => {
     try {
       const response = await fetch(
         `http://localhost:3000/chat/chat-history/${roomId}`
@@ -46,13 +49,13 @@ const App = () => {
       return [];
     }
   };
-  
+
   const fetchWhoAmI = async () => {
     const response = await fetch("http://localhost:3000/user/personal-data", {
       headers: { Authorization: `Bearer ${authorization}` },
     });
     return response.json();
-  }
+  };
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -62,7 +65,7 @@ const App = () => {
       }
     };
     fetchUser();
-  }, [authorization])
+  }, [authorization]);
   useEffect(() => {
     const newSocket = io("http://localhost:8001", {
       query: {
@@ -175,7 +178,7 @@ const App = () => {
           type="text"
           placeholder="Authorization"
           value={authorization}
-          onChange={e=>setAuthorization(e.target.value)}
+          onChange={(e) => setAuthorization(e.target.value)}
         />
         <button onClick={joinRoom}>Join Room</button>
       </div>
